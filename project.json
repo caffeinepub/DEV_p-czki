@@ -1,0 +1,22 @@
+{
+  "overview": "A playful 3D interactive app where you spin, click, and explore torus shapes textured as glazed Polish donuts (pączki).",
+  "features": [
+    "Full-viewport 3D torus gallery with donut glazing textures and lighting",
+    "5-8 colorful pączki (pink glaze, chocolate, cream, jam, sugar) in a floating cluster",
+    "Drag to orbit camera, scroll to zoom, click to make each donut bounce",
+    "Mobile touch support with drag and pinch gestures",
+    "Floating HUD with title and disappearing instruction hint",
+    "Reset button to return all donuts and camera to resting state"
+  ],
+  "category": "interactive",
+  "tags": [
+    "3d",
+    "webgl",
+    "fun",
+    "interactive",
+    "three-js",
+    "donuts",
+    "polish"
+  ],
+  "last_updated": "2026-06-19T15:47:05.879Z"
+}
