@@ -41,6 +41,13 @@ interface SprinkleData {
   position: THREE.Vector3;
   normal: THREE.Vector3;
   color: string;
+  angle: number;
+}
+
+interface NonpareilData {
+  position: THREE.Vector3;
+  color: string;
+  detail: number;
 }
 
 export default function DonutTorus({
@@ -56,41 +63,102 @@ export default function DonutTorus({
   const [isPopping, setIsPopping] = useState(false);
   const popStartRef = useRef<number>(0);
 
-  // Compute 3D sprinkle positions + normals on the torus surface
-  const sprinkles = useMemo<SprinkleData[]>(() => {
+  // Compute 3D sprinkle positions + normals on the torus surface.
+  // The donut group has rotation=[-PI/2, 0, 0], so applying Rx(-PI/2) to the
+  // local normal (nx, ny, nz) gives worldNormal.y = nz.
+  // Keep only candidates where nz > -0.1 (top-facing surface).
+  // We generate 600+ candidate positions from a shared pool, then split
+  // between sticks and nonpareils for dense coverage.
+  const { sprinkles, nonpareils } = useMemo<{
+    sprinkles: SprinkleData[];
+    nonpareils: NonpareilData[];
+  }>(() => {
     const R = radius;
     const r = tube;
+    const stickRadius = 0.025;
+    const stickOffset = stickRadius * 0.25; // ≈ 0.006 above surface
+    const nonpareilRadius = 0.031;
+    const nonpareilOffset = nonpareilRadius * 0.8;
     const rng = makeRng(index * 12345 + 7);
-    const count = 22;
-    const result: SprinkleData[] = [];
 
-    for (let i = 0; i < count; i++) {
+    const stickCount = 80;
+    const nonpareilCount = 50;
+    const candidatePool = 700; // generate many, filter to top-facing
+
+    // ---- Phase 1: collect all top-facing candidate positions ----
+    interface Candidate {
+      u: number;
+      v: number;
+      surfacePoint: THREE.Vector3;
+      normal: THREE.Vector3;
+      nz: number;
+    }
+    const candidates: Candidate[] = [];
+
+    for (let i = 0; i < candidatePool; i++) {
       const u = rng() * 2 * Math.PI;
       const v = rng() * 2 * Math.PI;
 
-      // Surface point
+      // Surface point — Three.js XY-plane TorusGeometry parameterization
       const x = (R + r * Math.cos(v)) * Math.cos(u);
-      const y = r * Math.sin(v);
-      const z = (R + r * Math.cos(v)) * Math.sin(u);
-      const surfacePoint = new THREE.Vector3(x, y, z);
+      const y = (R + r * Math.cos(v)) * Math.sin(u);
+      const z = r * Math.sin(v);
 
-      // Outward normal
+      // Outward normal — XY-plane convention
       const nx = Math.cos(v) * Math.cos(u);
-      const ny = Math.sin(v);
-      const nz = Math.cos(v) * Math.sin(u);
-      const normal = new THREE.Vector3(nx, ny, nz).normalize();
+      const ny = Math.cos(v) * Math.sin(u);
+      const nz = Math.sin(v);
 
-      // Position slightly above surface
-      const sprinklePos = surfacePoint
+      if (nz <= -0.1) continue; // bottom-facing — skip
+
+      candidates.push({
+        u,
+        v,
+        surfacePoint: new THREE.Vector3(x, y, z),
+        normal: new THREE.Vector3(nx, ny, nz).normalize(),
+        nz,
+      });
+    }
+
+    // ---- Phase 2: sticks — pick first stickCount from pool ----
+    // RNG calls for color + angle happen sequentially after pool generation.
+    const stickResult: SprinkleData[] = [];
+    for (let i = 0; i < Math.min(stickCount, candidates.length); i++) {
+      const c = candidates[i];
+      const sprinklePos = c.surfacePoint
         .clone()
-        .addScaledVector(normal, r * 0.15 + 0.02);
-
+        .addScaledVector(c.normal, stickOffset);
       const sprinkleColor =
         SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
-
-      result.push({ position: sprinklePos, normal, color: sprinkleColor });
+      const angle = rng() * Math.PI * 2;
+      stickResult.push({
+        position: sprinklePos,
+        normal: c.normal,
+        color: sprinkleColor,
+        angle,
+      });
     }
-    return result;
+
+    // ---- Phase 3: nonpareils — pick next nonpareilCount from pool ----
+    // RNG calls continue sequentially for determinism.
+    const nonpareilResult: NonpareilData[] = [];
+    const nonpareilStart = stickCount; // offset into candidates
+    for (
+      let i = nonpareilStart;
+      i < Math.min(nonpareilStart + nonpareilCount, candidates.length);
+      i++
+    ) {
+      const c = candidates[i];
+      const pos = c.surfacePoint
+        .clone()
+        .addScaledVector(c.normal, nonpareilOffset);
+      const color = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
+      // IcosahedronGeometry detail: alternate 1/2 for variety
+      const detail = i % 3 === 0 ? 2 : 1;
+      nonpareilResult.push({ position: pos, color, detail });
+    }
+
+    return { sprinkles: stickResult, nonpareils: nonpareilResult };
   }, [radius, tube, index]);
 
   const handleClick = useCallback(
@@ -149,31 +217,50 @@ export default function DonutTorus({
         />
       </mesh>
 
-      {/* Sprinkles - PlaneGeometry lying flat on torus surface via lookAt */}
+      {/* Sticks (patyczki) — CylinderGeometry rods lying flat on torus surface */}
       {sprinkles.map((s, i) => (
         <group
           // biome-ignore lint/suspicious/noArrayIndexKey: stable deterministic order
-          key={i}
+          key={`stick-${i}`}
           ref={(ref) => {
             if (ref) {
               ref.position.copy(s.position);
-              // lookAt(position + normal) aligns local Z to surface normal → plane lies FLAT
+              // lookAt(pos+normal): aligns local Z to outward normal → group XY plane is tangent to surface
               ref.lookAt(s.position.clone().add(s.normal));
-              // Rotate in-plane for visual variety using golden-angle distribution
-              ref.rotateZ(((i * 1.618) % 1) * Math.PI);
+              // rotateZ picks a random in-plane direction for the rod
+              ref.rotateZ(s.angle);
             }
           }}
         >
-          <mesh castShadow>
-            <planeGeometry args={[0.15, 0.05]} />
-            <meshStandardMaterial
-              color={s.color}
-              roughness={0.4}
-              metalness={0.1}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
+          {/* Inner group rotates cylinder 90° so its long Y axis lies in the tangent plane */}
+          <group rotation={[Math.PI / 2, 0, 0]}>
+            <mesh castShadow>
+              <cylinderGeometry args={[0.025, 0.025, 0.13, 8]} />
+              <meshStandardMaterial
+                color={s.color}
+                roughness={0.3}
+                metalness={0.1}
+              />
+            </mesh>
+          </group>
         </group>
+      ))}
+
+      {/* Nonpareils (kuleczki) — faceted IcosahedronGeometry sitting on surface */}
+      {nonpareils.map((n, i) => (
+        <mesh
+          // biome-ignore lint/suspicious/noArrayIndexKey: stable deterministic order
+          key={`nonpareil-${i}`}
+          position={n.position}
+          castShadow
+        >
+          <icosahedronGeometry args={[0.031, n.detail]} />
+          <meshStandardMaterial
+            color={n.color}
+            roughness={0.55}
+            metalness={0.05}
+          />
+        </mesh>
       ))}
     </group>
   );

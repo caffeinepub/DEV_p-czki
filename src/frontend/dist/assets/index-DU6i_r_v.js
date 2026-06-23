@@ -83517,28 +83517,59 @@ function DonutTorus({
   const groupRef = reactExports.useRef(null);
   const [isPopping, setIsPopping] = reactExports.useState(false);
   const popStartRef = reactExports.useRef(0);
-  const sprinkles = reactExports.useMemo(() => {
+  const { sprinkles, nonpareils } = reactExports.useMemo(() => {
     const R2 = radius;
     const r2 = tube;
+    const stickRadius = 0.025;
+    const stickOffset = stickRadius * 0.25;
+    const nonpareilRadius = 0.031;
+    const nonpareilOffset = nonpareilRadius * 0.8;
     const rng = makeRng(index2 * 12345 + 7);
-    const count = 22;
-    const result = [];
-    for (let i = 0; i < count; i++) {
+    const stickCount = 80;
+    const nonpareilCount = 50;
+    const candidatePool = 700;
+    const candidates = [];
+    for (let i = 0; i < candidatePool; i++) {
       const u2 = rng() * 2 * Math.PI;
       const v2 = rng() * 2 * Math.PI;
       const x2 = (R2 + r2 * Math.cos(v2)) * Math.cos(u2);
-      const y2 = r2 * Math.sin(v2);
-      const z2 = (R2 + r2 * Math.cos(v2)) * Math.sin(u2);
-      const surfacePoint = new Vector3(x2, y2, z2);
+      const y2 = (R2 + r2 * Math.cos(v2)) * Math.sin(u2);
+      const z2 = r2 * Math.sin(v2);
       const nx = Math.cos(v2) * Math.cos(u2);
-      const ny = Math.sin(v2);
-      const nz = Math.cos(v2) * Math.sin(u2);
-      const normal = new Vector3(nx, ny, nz).normalize();
-      const sprinklePos = surfacePoint.clone().addScaledVector(normal, r2 * 0.15 + 0.02);
-      const sprinkleColor = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
-      result.push({ position: sprinklePos, normal, color: sprinkleColor });
+      const ny = Math.cos(v2) * Math.sin(u2);
+      const nz = Math.sin(v2);
+      if (nz <= -0.1) continue;
+      candidates.push({
+        u: u2,
+        v: v2,
+        surfacePoint: new Vector3(x2, y2, z2),
+        normal: new Vector3(nx, ny, nz).normalize(),
+        nz
+      });
     }
-    return result;
+    const stickResult = [];
+    for (let i = 0; i < Math.min(stickCount, candidates.length); i++) {
+      const c2 = candidates[i];
+      const sprinklePos = c2.surfacePoint.clone().addScaledVector(c2.normal, stickOffset);
+      const sprinkleColor = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
+      const angle = rng() * Math.PI * 2;
+      stickResult.push({
+        position: sprinklePos,
+        normal: c2.normal,
+        color: sprinkleColor,
+        angle
+      });
+    }
+    const nonpareilResult = [];
+    const nonpareilStart = stickCount;
+    for (let i = nonpareilStart; i < Math.min(nonpareilStart + nonpareilCount, candidates.length); i++) {
+      const c2 = candidates[i];
+      const pos = c2.surfacePoint.clone().addScaledVector(c2.normal, nonpareilOffset);
+      const color2 = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
+      const detail = i % 3 === 0 ? 2 : 1;
+      nonpareilResult.push({ position: pos, color: color2, detail });
+    }
+    return { sprinkles: stickResult, nonpareils: nonpareilResult };
   }, [radius, tube, index2]);
   const handleClick = reactExports.useCallback(
     (e) => {
@@ -83593,23 +83624,41 @@ function DonutTorus({
             if (ref) {
               ref.position.copy(s.position);
               ref.lookAt(s.position.clone().add(s.normal));
-              ref.rotateZ(i * 1.618 % 1 * Math.PI);
+              ref.rotateZ(s.angle);
             }
           },
-          children: /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("planeGeometry", { args: [0.15, 0.05] }),
+          children: /* @__PURE__ */ jsxRuntimeExports.jsx("group", { rotation: [Math.PI / 2, 0, 0], children: /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("cylinderGeometry", { args: [0.025, 0.025, 0.13, 8] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "meshStandardMaterial",
               {
                 color: s.color,
-                roughness: 0.4,
-                metalness: 0.1,
-                side: DoubleSide
+                roughness: 0.3,
+                metalness: 0.1
               }
             )
-          ] })
+          ] }) })
         },
-        i
+        `stick-${i}`
+      )),
+      nonpareils.map((n, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "mesh",
+        {
+          position: n.position,
+          castShadow: true,
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("icosahedronGeometry", { args: [0.031, n.detail] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "meshStandardMaterial",
+              {
+                color: n.color,
+                roughness: 0.55,
+                metalness: 0.05
+              }
+            )
+          ]
+        },
+        `nonpareil-${i}`
       ))
     ] })
   );
