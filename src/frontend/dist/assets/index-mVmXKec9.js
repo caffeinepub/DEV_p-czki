@@ -83535,25 +83535,25 @@ function DonutTorus({
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
         `#include <common>
-varying float vWorldY;`
+varying float vLocalZ;`
       ).replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
-vWorldY = (modelMatrix * vec4(position, 1.0)).y;`
+vLocalZ = position.z;`
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
-varying float vWorldY;
+varying float vLocalZ;
 uniform vec3 uDoughColor;
 uniform vec3 uTopColor;
 uniform float uTubeRadius;`
       ).replace(
         "#include <color_fragment>",
         `#include <color_fragment>
-// remap world Y into [0,1] over the torus tube diameter
-// bottom = -uTubeRadius, top = +uTubeRadius
-float t = (vWorldY + uTubeRadius) / (2.0 * uTubeRadius);
+// remap local Z into [0,1] over the torus tube diameter
+// underside = -uTubeRadius (dough), top face = +uTubeRadius (glazed)
+float t = (vLocalZ + uTubeRadius) / (2.0 * uTubeRadius);
 t = clamp(t, 0.0, 1.0);
 // smoothstep: bottom 30% → dough, top 30% → top color, smooth middle
 float blend = smoothstep(0.25, 0.75, t);
