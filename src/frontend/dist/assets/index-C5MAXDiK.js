@@ -83521,32 +83521,22 @@ function DonutTorus({
     const R2 = radius;
     const r2 = tube;
     const rng = makeRng(index2 * 12345 + 7);
-    const count = 21;
+    const count = 22;
     const result = [];
     for (let i = 0; i < count; i++) {
       const u2 = rng() * 2 * Math.PI;
       const v2 = rng() * 2 * Math.PI;
-      const P2 = new Vector3(
-        (R2 + r2 * Math.cos(v2)) * Math.cos(u2),
-        r2 * Math.sin(v2),
-        (R2 + r2 * Math.cos(v2)) * Math.sin(u2)
-      );
-      const N2 = new Vector3(
-        Math.cos(v2) * Math.cos(u2),
-        Math.sin(v2),
-        Math.cos(v2) * Math.sin(u2)
-      ).normalize();
-      const Tu = new Vector3(-Math.sin(u2), 0, Math.cos(u2)).normalize();
-      const Tv = new Vector3(
-        -Math.cos(u2) * Math.sin(v2),
-        Math.cos(v2),
-        -Math.sin(u2) * Math.sin(v2)
-      ).normalize();
-      const mat = new Matrix4().makeBasis(Tu, Tv, N2);
-      const quaternion = new Quaternion().setFromRotationMatrix(mat);
-      const sprinklePos = P2.clone().addScaledVector(N2, r2 * 0.05 + 0.04);
+      const x2 = (R2 + r2 * Math.cos(v2)) * Math.cos(u2);
+      const y2 = r2 * Math.sin(v2);
+      const z2 = (R2 + r2 * Math.cos(v2)) * Math.sin(u2);
+      const surfacePoint = new Vector3(x2, y2, z2);
+      const nx = Math.cos(v2) * Math.cos(u2);
+      const ny = Math.sin(v2);
+      const nz = Math.cos(v2) * Math.sin(u2);
+      const normal = new Vector3(nx, ny, nz).normalize();
+      const sprinklePos = surfacePoint.clone().addScaledVector(normal, r2 * 0.15 + 0.02);
       const sprinkleColor = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
-      result.push({ position: sprinklePos, quaternion, color: sprinkleColor });
+      result.push({ position: sprinklePos, normal, color: sprinkleColor });
     }
     return result;
   }, [radius, tube, index2]);
@@ -83596,23 +83586,28 @@ function DonutTorus({
           }
         )
       ] }),
-      sprinkles.map((s, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "mesh",
+      sprinkles.map((s, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "group",
         {
-          castShadow: true,
-          position: s.position,
-          quaternion: s.quaternion,
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("cylinderGeometry", { args: [0.025, 0.025, 0.09, 6] }),
+          ref: (ref) => {
+            if (ref) {
+              ref.position.copy(s.position);
+              ref.lookAt(s.position.clone().add(s.normal));
+              ref.rotateZ(i * 1.618 % 1 * Math.PI);
+            }
+          },
+          children: /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("planeGeometry", { args: [0.15, 0.05] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "meshStandardMaterial",
               {
                 color: s.color,
                 roughness: 0.4,
-                metalness: 0.1
+                metalness: 0.1,
+                side: DoubleSide
               }
             )
-          ]
+          ] })
         },
         i
       ))

@@ -39,7 +39,7 @@ function makeRng(seed: number) {
 
 interface SprinkleData {
   position: THREE.Vector3;
-  quaternion: THREE.Quaternion;
+  normal: THREE.Vector3;
   color: string;
 }
 
@@ -56,46 +56,39 @@ export default function DonutTorus({
   const [isPopping, setIsPopping] = useState(false);
   const popStartRef = useRef<number>(0);
 
-  // Compute 3D sprinkle transforms on the torus surface
+  // Compute 3D sprinkle positions + normals on the torus surface
   const sprinkles = useMemo<SprinkleData[]>(() => {
     const R = radius;
     const r = tube;
     const rng = makeRng(index * 12345 + 7);
-    const count = 21;
+    const count = 22;
     const result: SprinkleData[] = [];
 
     for (let i = 0; i < count; i++) {
       const u = rng() * 2 * Math.PI;
       const v = rng() * 2 * Math.PI;
 
-      const P = new THREE.Vector3(
-        (R + r * Math.cos(v)) * Math.cos(u),
-        r * Math.sin(v),
-        (R + r * Math.cos(v)) * Math.sin(u),
-      );
+      // Surface point
+      const x = (R + r * Math.cos(v)) * Math.cos(u);
+      const y = r * Math.sin(v);
+      const z = (R + r * Math.cos(v)) * Math.sin(u);
+      const surfacePoint = new THREE.Vector3(x, y, z);
 
-      const N = new THREE.Vector3(
-        Math.cos(v) * Math.cos(u),
-        Math.sin(v),
-        Math.cos(v) * Math.sin(u),
-      ).normalize();
+      // Outward normal
+      const nx = Math.cos(v) * Math.cos(u);
+      const ny = Math.sin(v);
+      const nz = Math.cos(v) * Math.sin(u);
+      const normal = new THREE.Vector3(nx, ny, nz).normalize();
 
-      const Tu = new THREE.Vector3(-Math.sin(u), 0, Math.cos(u)).normalize();
+      // Position slightly above surface
+      const sprinklePos = surfacePoint
+        .clone()
+        .addScaledVector(normal, r * 0.15 + 0.02);
 
-      const Tv = new THREE.Vector3(
-        -Math.cos(u) * Math.sin(v),
-        Math.cos(v),
-        -Math.sin(u) * Math.sin(v),
-      ).normalize();
-
-      const mat = new THREE.Matrix4().makeBasis(Tu, Tv, N);
-      const quaternion = new THREE.Quaternion().setFromRotationMatrix(mat);
-
-      const sprinklePos = P.clone().addScaledVector(N, r * 0.05 + 0.04);
       const sprinkleColor =
         SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
 
-      result.push({ position: sprinklePos, quaternion, color: sprinkleColor });
+      result.push({ position: sprinklePos, normal, color: sprinkleColor });
     }
     return result;
   }, [radius, tube, index]);
@@ -156,22 +149,31 @@ export default function DonutTorus({
         />
       </mesh>
 
-      {/* Sprinkles - 3D cylinders lying flat on torus surface */}
+      {/* Sprinkles - PlaneGeometry lying flat on torus surface via lookAt */}
       {sprinkles.map((s, i) => (
-        <mesh
+        <group
           // biome-ignore lint/suspicious/noArrayIndexKey: stable deterministic order
           key={i}
-          castShadow
-          position={s.position}
-          quaternion={s.quaternion}
+          ref={(ref) => {
+            if (ref) {
+              ref.position.copy(s.position);
+              // lookAt(position + normal) aligns local Z to surface normal → plane lies FLAT
+              ref.lookAt(s.position.clone().add(s.normal));
+              // Rotate in-plane for visual variety using golden-angle distribution
+              ref.rotateZ(((i * 1.618) % 1) * Math.PI);
+            }
+          }}
         >
-          <cylinderGeometry args={[0.025, 0.025, 0.09, 6]} />
-          <meshStandardMaterial
-            color={s.color}
-            roughness={0.4}
-            metalness={0.1}
-          />
-        </mesh>
+          <mesh castShadow>
+            <planeGeometry args={[0.15, 0.05]} />
+            <meshStandardMaterial
+              color={s.color}
+              roughness={0.4}
+              metalness={0.1}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </group>
       ))}
     </group>
   );
