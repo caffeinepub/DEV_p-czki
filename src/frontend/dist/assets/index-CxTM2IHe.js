@@ -83484,6 +83484,7 @@ function EnvironmentGround(props) {
 function Environment(props) {
   return props.ground ? /* @__PURE__ */ reactExports.createElement(EnvironmentGround, props) : props.map ? /* @__PURE__ */ reactExports.createElement(EnvironmentMap, props) : props.children ? /* @__PURE__ */ reactExports.createElement(EnvironmentPortal, props) : /* @__PURE__ */ reactExports.createElement(EnvironmentCube, props);
 }
+const DOUGH_COLOR = new Color("#C8822A");
 const SPRINKLE_COLORS = [
   "#FF2255",
   "#00CCFF",
@@ -83517,6 +83518,56 @@ function DonutTorus({
   const groupRef = reactExports.useRef(null);
   const [isPopping, setIsPopping] = reactExports.useState(false);
   const popStartRef = reactExports.useRef(0);
+  const baseMaterial = reactExports.useMemo(() => {
+    const topColor = new Color(color);
+    const mat = new MeshStandardMaterial({
+      color: topColor,
+      roughness: 0.25,
+      metalness: 0.1
+    });
+    const uniforms = {
+      uDoughColor: { value: DOUGH_COLOR.clone() },
+      uTopColor: { value: topColor.clone() },
+      uTubeRadius: { value: tube }
+    };
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        `#include <common>
+varying float vWorldY;`
+      ).replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+vWorldY = (modelMatrix * vec4(position, 1.0)).y;`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+varying float vWorldY;
+uniform vec3 uDoughColor;
+uniform vec3 uTopColor;
+uniform float uTubeRadius;`
+      ).replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+// remap world Y into [0,1] over the torus tube diameter
+// bottom = -uTubeRadius, top = +uTubeRadius
+float t = (vWorldY + uTubeRadius) / (2.0 * uTubeRadius);
+t = clamp(t, 0.0, 1.0);
+// smoothstep: bottom 30% → dough, top 30% → top color, smooth middle
+float blend = smoothstep(0.25, 0.75, t);
+diffuseColor.rgb = mix(uDoughColor, uTopColor, blend);`
+      );
+    };
+    mat.needsUpdate = true;
+    return mat;
+  }, [color, tube]);
+  reactExports.useEffect(() => {
+    const topColor = new Color(color);
+    baseMaterial.color.set(topColor);
+    baseMaterial.needsUpdate = true;
+  }, [color, baseMaterial]);
   const { sprinkles, nonpareils } = reactExports.useMemo(() => {
     const R2 = radius;
     const r2 = tube;
@@ -83600,10 +83651,7 @@ function DonutTorus({
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Three.js mesh elements do not support keyboard events
     /* @__PURE__ */ jsxRuntimeExports.jsxs("group", { ref: groupRef, position, onClick: handleClick, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, receiveShadow: true, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius, tube, 32, 64] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("meshStandardMaterial", { color, roughness: 0.25, metalness: 0.1 })
-      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("mesh", { castShadow: true, receiveShadow: true, material: baseMaterial, children: /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius, tube, 32, 64] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, receiveShadow: true, position: [0, tube * 0.05, 0], children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius * 1.02, tube * 0.85, 32, 64] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(

@@ -1,7 +1,10 @@
 import { useFrame } from "@react-three/fiber";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Group } from "three";
+
+// Warm baked dough color (bottom of torus)
+const DOUGH_COLOR = new THREE.Color("#C8822A");
 
 interface DonutTorusProps {
   position: [number, number, number];
@@ -62,6 +65,80 @@ export default function DonutTorus({
   const groupRef = useRef<Group>(null);
   const [isPopping, setIsPopping] = useState(false);
   const popStartRef = useRef<number>(0);
+
+  // MeshStandardMaterial with onBeforeCompile gradient injection.
+  // World-space Y is passed as a varying; the fragment shader blends
+  // DOUGH_COLOR (bottom) → donut main color (top) via smoothstep.
+  const baseMaterial = useMemo(() => {
+    const topColor = new THREE.Color(color);
+    const mat = new THREE.MeshStandardMaterial({
+      color: topColor,
+      roughness: 0.25,
+      metalness: 0.1,
+    });
+
+    // Uniforms for the gradient
+    const uniforms = {
+      uDoughColor: { value: DOUGH_COLOR.clone() },
+      uTopColor: { value: topColor.clone() },
+      uTubeRadius: { value: tube },
+    };
+
+    mat.onBeforeCompile = (shader) => {
+      // Merge our uniforms into the shader
+      Object.assign(shader.uniforms, uniforms);
+
+      // Vertex: compute world-space Y and pass as varying
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+varying float vWorldY;`,
+        )
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+vWorldY = (modelMatrix * vec4(position, 1.0)).y;`,
+        );
+
+      // Fragment: blend dough color with the base map color
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+varying float vWorldY;
+uniform vec3 uDoughColor;
+uniform vec3 uTopColor;
+uniform float uTubeRadius;`,
+        )
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+// remap world Y into [0,1] over the torus tube diameter
+// bottom = -uTubeRadius, top = +uTubeRadius
+float t = (vWorldY + uTubeRadius) / (2.0 * uTubeRadius);
+t = clamp(t, 0.0, 1.0);
+// smoothstep: bottom 30% → dough, top 30% → top color, smooth middle
+float blend = smoothstep(0.25, 0.75, t);
+diffuseColor.rgb = mix(uDoughColor, uTopColor, blend);`,
+        );
+    };
+
+    // Needed so Three.js re-compiles when color prop changes
+    mat.needsUpdate = true;
+    return mat;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [color, tube]);
+
+  // Keep uTopColor uniform in sync when color prop changes
+  useEffect(() => {
+    const topColor = new THREE.Color(color);
+    // Access uniforms via the material's onBeforeCompile-injected uniform ref
+    // We update the shared uniforms object directly since it's closed over.
+    // Force a re-compile by toggling needsUpdate.
+    baseMaterial.color.set(topColor);
+    baseMaterial.needsUpdate = true;
+  }, [color, baseMaterial]);
 
   // Compute 3D sprinkle positions + normals on the torus surface.
   // The donut group has rotation=[-PI/2, 0, 0], so applying Rx(-PI/2) to the
@@ -199,10 +276,9 @@ export default function DonutTorus({
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Three.js mesh elements do not support keyboard events
     <group ref={groupRef} position={position} onClick={handleClick}>
-      {/* Base donut body */}
-      <mesh castShadow receiveShadow>
+      {/* Base donut body — gradient from dough (bottom) to main color (top) */}
+      <mesh castShadow receiveShadow material={baseMaterial}>
         <torusGeometry args={[radius, tube, 32, 64]} />
-        <meshStandardMaterial color={color} roughness={0.25} metalness={0.1} />
       </mesh>
 
       {/* Frosting layer - 3D torus geometry, plain colored material */}
