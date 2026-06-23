@@ -18,42 +18,49 @@ const DONUT_CONFIGS = [
     radius: 1.1,
     tube: 0.38,
     color: "#FFB3C6",
+    frostingColor: "#FF6B9D",
   },
   {
     position: [2.4, 0.6, -0.5] as [number, number, number],
     radius: 0.9,
     tube: 0.32,
     color: "#5C3317",
+    frostingColor: "#8B5E3C",
   },
   {
     position: [-2.2, 0.4, 0.3] as [number, number, number],
     radius: 0.8,
     tube: 0.3,
     color: "#F5F0E8",
+    frostingColor: "#FFFFFF",
   },
   {
     position: [1.0, -1.8, 0.8] as [number, number, number],
     radius: 0.7,
     tube: 0.28,
     color: "#CC2222",
+    frostingColor: "#FF4444",
   },
   {
     position: [-1.2, -1.6, -0.4] as [number, number, number],
     radius: 1.0,
     tube: 0.36,
     color: "#F5D06A",
+    frostingColor: "#FFE566",
   },
   {
     position: [2.0, -1.0, 1.2] as [number, number, number],
     radius: 0.65,
     tube: 0.27,
     color: "#E8834A",
+    frostingColor: "#F4A261",
   },
   {
     position: [-2.0, -0.8, -1.0] as [number, number, number],
     radius: 0.75,
     tube: 0.29,
     color: "#D4497A",
+    frostingColor: "#E040FB",
   },
 ];
 
@@ -79,6 +86,7 @@ function Cluster({ groupRef }: ClusterProps) {
           radius={cfg.radius}
           tube={cfg.tube}
           color={cfg.color}
+          frostingColor={cfg.frostingColor}
           rotationOffset={ROTATION_OFFSETS[i]}
           index={i}
         />

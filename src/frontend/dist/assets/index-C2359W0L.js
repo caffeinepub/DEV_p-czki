@@ -83484,17 +83484,91 @@ function EnvironmentGround(props) {
 function Environment(props) {
   return props.ground ? /* @__PURE__ */ reactExports.createElement(EnvironmentGround, props) : props.map ? /* @__PURE__ */ reactExports.createElement(EnvironmentMap, props) : props.children ? /* @__PURE__ */ reactExports.createElement(EnvironmentPortal, props) : /* @__PURE__ */ reactExports.createElement(EnvironmentCube, props);
 }
+const SPRINKLE_COLORS = [
+  "#FF2255",
+  "#00CCFF",
+  "#FFD700",
+  "#44DD00",
+  "#FF6600",
+  "#CC00FF",
+  "#FF99CC",
+  "#00FFAA",
+  "#FF4400",
+  "#33AAFF"
+];
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s += 1831565813;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function buildDonutTexture(frostingColor, seed) {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new CanvasTexture(canvas);
+  ctx.fillStyle = frostingColor;
+  ctx.fillRect(0, 0, size, size);
+  const gloss = ctx.createLinearGradient(0, 0, 0, size * 0.45);
+  gloss.addColorStop(0, "rgba(255,255,255,0.35)");
+  gloss.addColorStop(0.5, "rgba(255,255,255,0.08)");
+  gloss.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gloss;
+  ctx.fillRect(0, 0, size, size * 0.45);
+  const rng = makeRng(seed);
+  const count = 32;
+  for (let i = 0; i < count; i++) {
+    const x2 = rng() * size;
+    const y2 = rng() * size;
+    const w2 = 8 + rng() * 7;
+    const h2 = 3 + rng() * 2;
+    const angle = rng() * Math.PI;
+    const color = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
+    ctx.save();
+    ctx.translate(x2, y2);
+    ctx.rotate(angle);
+    ctx.fillStyle = color;
+    const r2 = h2 / 2;
+    ctx.beginPath();
+    ctx.moveTo(-w2 / 2 + r2, -r2);
+    ctx.lineTo(w2 / 2 - r2, -r2);
+    ctx.arc(w2 / 2 - r2, 0, r2, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(-w2 / 2 + r2, r2);
+    ctx.arc(-w2 / 2 + r2, 0, r2, Math.PI / 2, -Math.PI / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, -r2 * 0.3, w2 * 0.35, r2 * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  const tex = new CanvasTexture(canvas);
+  tex.wrapS = RepeatWrapping;
+  tex.wrapT = RepeatWrapping;
+  return tex;
+}
 function DonutTorus({
   position,
   radius,
   tube,
   color,
+  frostingColor,
   index: index2,
   rotationOffset = 0
 }) {
-  const meshRef = reactExports.useRef(null);
+  const groupRef = reactExports.useRef(null);
   const [isPopping, setIsPopping] = reactExports.useState(false);
   const popStartRef = reactExports.useRef(0);
+  const donutTexture = reactExports.useMemo(
+    () => buildDonutTexture(frostingColor, index2 * 12345 + 7),
+    [frostingColor, index2]
+  );
   const handleClick = reactExports.useCallback(
     (e) => {
       e.stopPropagation();
@@ -83505,38 +83579,44 @@ function DonutTorus({
     [isPopping]
   );
   useFrame(() => {
-    if (!meshRef.current) return;
-    meshRef.current.rotation.x += 3e-3 + index2 * 5e-4 + rotationOffset * 1e-3;
-    meshRef.current.rotation.y += 5e-3 + index2 * 8e-4 + rotationOffset * 2e-3;
+    if (!groupRef.current) return;
+    groupRef.current.rotation.x += 3e-3 + index2 * 5e-4 + rotationOffset * 1e-3;
+    groupRef.current.rotation.y += 5e-3 + index2 * 8e-4 + rotationOffset * 2e-3;
     if (isPopping) {
       const elapsed = (performance.now() - popStartRef.current) / 1e3;
       const duration = 0.4;
       if (elapsed >= duration) {
-        meshRef.current.scale.setScalar(1);
+        groupRef.current.scale.setScalar(1);
         setIsPopping(false);
       } else {
         const t = elapsed / duration;
         const scale = t < 0.3 ? 1 + (1.3 - 1) * (t / 0.3) : 1 + (1.3 - 1) * (1 - (t - 0.3) / 0.7);
-        meshRef.current.scale.setScalar(scale);
+        groupRef.current.scale.setScalar(scale);
       }
     }
   });
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: Three.js mesh elements do not support keyboard events
-    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-      "mesh",
-      {
-        ref: meshRef,
-        position,
-        onClick: handleClick,
-        castShadow: true,
-        receiveShadow: true,
-        children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius, tube, 32, 64] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("meshStandardMaterial", { color, roughness: 0.2, metalness: 0.1 })
-        ]
-      }
-    )
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("group", { ref: groupRef, position, onClick: handleClick, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, receiveShadow: true, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius, tube, 32, 64] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("meshStandardMaterial", { color, roughness: 0.25, metalness: 0.1 })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, receiveShadow: true, position: [0, tube * 0.08, 0], children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius * 1.04, tube * 0.72, 32, 64] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "meshStandardMaterial",
+          {
+            map: donutTexture,
+            color: 16777215,
+            roughness: 0.15,
+            metalness: 0.4,
+            transparent: true,
+            opacity: 0.95
+          }
+        )
+      ] })
+    ] })
   );
 }
 const DONUT_CONFIGS = [
@@ -83544,43 +83624,50 @@ const DONUT_CONFIGS = [
     position: [0, 0, 0],
     radius: 1.1,
     tube: 0.38,
-    color: "#FFB3C6"
+    color: "#FFB3C6",
+    frostingColor: "#FF6B9D"
   },
   {
     position: [2.4, 0.6, -0.5],
     radius: 0.9,
     tube: 0.32,
-    color: "#5C3317"
+    color: "#5C3317",
+    frostingColor: "#8B5E3C"
   },
   {
     position: [-2.2, 0.4, 0.3],
     radius: 0.8,
     tube: 0.3,
-    color: "#F5F0E8"
+    color: "#F5F0E8",
+    frostingColor: "#FFFFFF"
   },
   {
     position: [1, -1.8, 0.8],
     radius: 0.7,
     tube: 0.28,
-    color: "#CC2222"
+    color: "#CC2222",
+    frostingColor: "#FF4444"
   },
   {
     position: [-1.2, -1.6, -0.4],
     radius: 1,
     tube: 0.36,
-    color: "#F5D06A"
+    color: "#F5D06A",
+    frostingColor: "#FFE566"
   },
   {
     position: [2, -1, 1.2],
     radius: 0.65,
     tube: 0.27,
-    color: "#E8834A"
+    color: "#E8834A",
+    frostingColor: "#F4A261"
   },
   {
     position: [-2, -0.8, -1],
     radius: 0.75,
     tube: 0.29,
-    color: "#D4497A"
+    color: "#D4497A",
+    frostingColor: "#E040FB"
   }
 ];
 const ROTATION_OFFSETS = [0.2, 0.8, 0.4, 1.2, 0.6, 0.1, 0.9];
@@ -83597,6 +83684,7 @@ function Cluster({ groupRef }) {
       radius: cfg.radius,
       tube: cfg.tube,
       color: cfg.color,
+      frostingColor: cfg.frostingColor,
       rotationOffset: ROTATION_OFFSETS[i],
       index: i
     },
