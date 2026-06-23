@@ -83505,54 +83505,6 @@ function makeRng(seed) {
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
-function buildDonutTexture(frostingColor, seed) {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return new CanvasTexture(canvas);
-  ctx.fillStyle = frostingColor;
-  ctx.fillRect(0, 0, size, size);
-  const gloss = ctx.createLinearGradient(0, 0, 0, size * 0.45);
-  gloss.addColorStop(0, "rgba(255,255,255,0.35)");
-  gloss.addColorStop(0.5, "rgba(255,255,255,0.08)");
-  gloss.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = gloss;
-  ctx.fillRect(0, 0, size, size * 0.45);
-  const rng = makeRng(seed);
-  const count = 32;
-  for (let i = 0; i < count; i++) {
-    const x2 = rng() * size;
-    const y2 = rng() * size;
-    const w2 = 8 + rng() * 7;
-    const h2 = 3 + rng() * 2;
-    const angle = rng() * Math.PI;
-    const color = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
-    ctx.save();
-    ctx.translate(x2, y2);
-    ctx.rotate(angle);
-    ctx.fillStyle = color;
-    const r2 = h2 / 2;
-    ctx.beginPath();
-    ctx.moveTo(-w2 / 2 + r2, -r2);
-    ctx.lineTo(w2 / 2 - r2, -r2);
-    ctx.arc(w2 / 2 - r2, 0, r2, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(-w2 / 2 + r2, r2);
-    ctx.arc(-w2 / 2 + r2, 0, r2, Math.PI / 2, -Math.PI / 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.beginPath();
-    ctx.ellipse(0, -r2 * 0.3, w2 * 0.35, r2 * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-  const tex = new CanvasTexture(canvas);
-  tex.wrapS = RepeatWrapping;
-  tex.wrapT = RepeatWrapping;
-  return tex;
-}
 function DonutTorus({
   position,
   radius,
@@ -83565,10 +83517,39 @@ function DonutTorus({
   const groupRef = reactExports.useRef(null);
   const [isPopping, setIsPopping] = reactExports.useState(false);
   const popStartRef = reactExports.useRef(0);
-  const donutTexture = reactExports.useMemo(
-    () => buildDonutTexture(frostingColor, index2 * 12345 + 7),
-    [frostingColor, index2]
-  );
+  const sprinkles = reactExports.useMemo(() => {
+    const R2 = radius;
+    const r2 = tube;
+    const rng = makeRng(index2 * 12345 + 7);
+    const count = 21;
+    const result = [];
+    for (let i = 0; i < count; i++) {
+      const u2 = rng() * 2 * Math.PI;
+      const v2 = rng() * 2 * Math.PI;
+      const P2 = new Vector3(
+        (R2 + r2 * Math.cos(v2)) * Math.cos(u2),
+        r2 * Math.sin(v2),
+        (R2 + r2 * Math.cos(v2)) * Math.sin(u2)
+      );
+      const N2 = new Vector3(
+        Math.cos(v2) * Math.cos(u2),
+        Math.sin(v2),
+        Math.cos(v2) * Math.sin(u2)
+      ).normalize();
+      const Tu = new Vector3(-Math.sin(u2), 0, Math.cos(u2)).normalize();
+      const Tv = new Vector3(
+        -Math.cos(u2) * Math.sin(v2),
+        Math.cos(v2),
+        -Math.sin(u2) * Math.sin(v2)
+      ).normalize();
+      const mat = new Matrix4().makeBasis(Tu, Tv, N2);
+      const quaternion = new Quaternion().setFromRotationMatrix(mat);
+      const sprinklePos = P2.clone().addScaledVector(N2, r2 * 0.05 + 0.04);
+      const sprinkleColor = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
+      result.push({ position: sprinklePos, quaternion, color: sprinkleColor });
+    }
+    return result;
+  }, [radius, tube, index2]);
   const handleClick = reactExports.useCallback(
     (e) => {
       e.stopPropagation();
@@ -83602,20 +83583,39 @@ function DonutTorus({
         /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius, tube, 32, 64] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("meshStandardMaterial", { color, roughness: 0.25, metalness: 0.1 })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, receiveShadow: true, position: [0, tube * 0.08, 0], children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius * 1.04, tube * 0.72, 32, 64] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("mesh", { castShadow: true, receiveShadow: true, position: [0, tube * 0.05, 0], children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("torusGeometry", { args: [radius * 1.02, tube * 0.85, 32, 64] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "meshStandardMaterial",
           {
-            map: donutTexture,
-            color: 16777215,
-            roughness: 0.15,
-            metalness: 0.4,
+            color: frostingColor,
+            roughness: 0.1,
+            metalness: 0.3,
             transparent: true,
-            opacity: 0.95
+            opacity: 0.92
           }
         )
-      ] })
+      ] }),
+      sprinkles.map((s, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "mesh",
+        {
+          castShadow: true,
+          position: s.position,
+          quaternion: s.quaternion,
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("cylinderGeometry", { args: [0.025, 0.025, 0.09, 6] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "meshStandardMaterial",
+              {
+                color: s.color,
+                roughness: 0.4,
+                metalness: 0.1
+              }
+            )
+          ]
+        },
+        i
+      ))
     ] })
   );
 }

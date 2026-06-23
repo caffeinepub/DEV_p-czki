@@ -37,66 +37,10 @@ function makeRng(seed: number) {
   };
 }
 
-function buildDonutTexture(
-  frostingColor: string,
-  seed: number,
-): THREE.CanvasTexture {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return new THREE.CanvasTexture(canvas);
-
-  // Fill frosting base
-  ctx.fillStyle = frostingColor;
-  ctx.fillRect(0, 0, size, size);
-
-  // Add subtle gloss highlight band
-  const gloss = ctx.createLinearGradient(0, 0, 0, size * 0.45);
-  gloss.addColorStop(0, "rgba(255,255,255,0.35)");
-  gloss.addColorStop(0.5, "rgba(255,255,255,0.08)");
-  gloss.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = gloss;
-  ctx.fillRect(0, 0, size, size * 0.45);
-
-  const rng = makeRng(seed);
-  const count = 32;
-
-  for (let i = 0; i < count; i++) {
-    const x = rng() * size;
-    const y = rng() * size;
-    const w = 8 + rng() * 7; // 8–15 px long
-    const h = 3 + rng() * 2; // 3–5 px wide
-    const angle = rng() * Math.PI;
-    const color = SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.fillStyle = color;
-    // Draw elongated rounded rectangle
-    const r = h / 2;
-    ctx.beginPath();
-    ctx.moveTo(-w / 2 + r, -r);
-    ctx.lineTo(w / 2 - r, -r);
-    ctx.arc(w / 2 - r, 0, r, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(-w / 2 + r, r);
-    ctx.arc(-w / 2 + r, 0, r, Math.PI / 2, -Math.PI / 2);
-    ctx.closePath();
-    ctx.fill();
-    // Subtle highlight on top of sprinkle
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.beginPath();
-    ctx.ellipse(0, -r * 0.3, w * 0.35, r * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+interface SprinkleData {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  color: string;
 }
 
 export default function DonutTorus({
@@ -112,10 +56,49 @@ export default function DonutTorus({
   const [isPopping, setIsPopping] = useState(false);
   const popStartRef = useRef<number>(0);
 
-  const donutTexture = useMemo(
-    () => buildDonutTexture(frostingColor, index * 12345 + 7),
-    [frostingColor, index],
-  );
+  // Compute 3D sprinkle transforms on the torus surface
+  const sprinkles = useMemo<SprinkleData[]>(() => {
+    const R = radius;
+    const r = tube;
+    const rng = makeRng(index * 12345 + 7);
+    const count = 21;
+    const result: SprinkleData[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const u = rng() * 2 * Math.PI;
+      const v = rng() * 2 * Math.PI;
+
+      const P = new THREE.Vector3(
+        (R + r * Math.cos(v)) * Math.cos(u),
+        r * Math.sin(v),
+        (R + r * Math.cos(v)) * Math.sin(u),
+      );
+
+      const N = new THREE.Vector3(
+        Math.cos(v) * Math.cos(u),
+        Math.sin(v),
+        Math.cos(v) * Math.sin(u),
+      ).normalize();
+
+      const Tu = new THREE.Vector3(-Math.sin(u), 0, Math.cos(u)).normalize();
+
+      const Tv = new THREE.Vector3(
+        -Math.cos(u) * Math.sin(v),
+        Math.cos(v),
+        -Math.sin(u) * Math.sin(v),
+      ).normalize();
+
+      const mat = new THREE.Matrix4().makeBasis(Tu, Tv, N);
+      const quaternion = new THREE.Quaternion().setFromRotationMatrix(mat);
+
+      const sprinklePos = P.clone().addScaledVector(N, r * 0.05 + 0.04);
+      const sprinkleColor =
+        SPRINKLE_COLORS[Math.floor(rng() * SPRINKLE_COLORS.length)];
+
+      result.push({ position: sprinklePos, quaternion, color: sprinkleColor });
+    }
+    return result;
+  }, [radius, tube, index]);
 
   const handleClick = useCallback(
     (e: { stopPropagation: () => void }) => {
@@ -130,13 +113,11 @@ export default function DonutTorus({
   useFrame(() => {
     if (!groupRef.current) return;
 
-    // Individual idle rotation
     groupRef.current.rotation.x +=
       0.003 + index * 0.0005 + rotationOffset * 0.001;
     groupRef.current.rotation.y +=
       0.005 + index * 0.0008 + rotationOffset * 0.002;
 
-    // Pop animation
     if (isPopping) {
       const elapsed = (performance.now() - popStartRef.current) / 1000;
       const duration = 0.4;
@@ -163,18 +144,35 @@ export default function DonutTorus({
         <meshStandardMaterial color={color} roughness={0.25} metalness={0.1} />
       </mesh>
 
-      {/* Frosting + sprinkles via canvas texture — covers top of torus */}
-      <mesh castShadow receiveShadow position={[0, tube * 0.08, 0]}>
-        <torusGeometry args={[radius * 1.04, tube * 0.72, 32, 64]} />
+      {/* Frosting layer - 3D torus geometry, plain colored material */}
+      <mesh castShadow receiveShadow position={[0, tube * 0.05, 0]}>
+        <torusGeometry args={[radius * 1.02, tube * 0.85, 32, 64]} />
         <meshStandardMaterial
-          map={donutTexture}
-          color={0xffffff}
-          roughness={0.15}
-          metalness={0.4}
+          color={frostingColor}
+          roughness={0.1}
+          metalness={0.3}
           transparent
-          opacity={0.95}
+          opacity={0.92}
         />
       </mesh>
+
+      {/* Sprinkles - 3D cylinders lying flat on torus surface */}
+      {sprinkles.map((s, i) => (
+        <mesh
+          // biome-ignore lint/suspicious/noArrayIndexKey: stable deterministic order
+          key={i}
+          castShadow
+          position={s.position}
+          quaternion={s.quaternion}
+        >
+          <cylinderGeometry args={[0.025, 0.025, 0.09, 6]} />
+          <meshStandardMaterial
+            color={s.color}
+            roughness={0.4}
+            metalness={0.1}
+          />
+        </mesh>
+      ))}
     </group>
   );
 }
